@@ -1,0 +1,6 @@
+{
+  "name": "a2 ERP Administrativo",
+  "description": "ERP administrativo profesional adaptado a Venezuela con bimoneda USD/Bs, tasa BCV, inventario, ventas, compras, CxC, CxP, caja y bancos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
