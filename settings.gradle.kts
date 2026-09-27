@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "a2 ERP Administrativo"
+rootProject.name = "a2 Punto de Venta (POS)"
 
 include(":app")

@@ -52,6 +52,7 @@ fun PosSalesScreen(
     val categories by viewModel.categories.collectAsState()
     val latestRate by viewModel.latestRate.collectAsState()
     val company by viewModel.company.collectAsState()
+    val heldTickets by viewModel.heldTickets.collectAsState()
 
     val rate = if (posState.isCustomRate && posState.customRate > 0) posState.customRate else (latestRate?.rate ?: 62.50)
     val igtfPercent = company?.igtfPercent ?: 3.0
@@ -61,6 +62,7 @@ fun PosSalesScreen(
     var showClientDialog by remember { mutableStateOf(false) }
     var showPaymentModal by remember { mutableStateOf(false) }
     var showCatalogPicker by remember { mutableStateOf(false) }
+    var showHeldTicketsModal by remember { mutableStateOf(false) }
     var itemQuantityInput by remember { mutableStateOf("1") }
 
     // Computations
@@ -622,6 +624,7 @@ fun PosSalesScreen(
                 FunctionKeyBadge("F2", "Catálogo") { showCatalogPicker = true }
                 FunctionKeyBadge("F3", "Cantidad") {}
                 FunctionKeyBadge("F4", "Cliente") { showClientDialog = true }
+                FunctionKeyBadge("F5", "En Espera (${heldTickets.size})") { showHeldTicketsModal = true }
                 FunctionKeyBadge("F7", "Pagos") { showPaymentModal = true }
                 FunctionKeyBadge("F8", "Limpiar") { viewModel.clearCart() }
                 FunctionKeyBadge("F9", "Cobrar") {
@@ -647,6 +650,26 @@ fun PosSalesScreen(
                 }
             },
             onDismiss = { showPaymentModal = false }
+        )
+    }
+
+    // Held Tickets Modal
+    if (showHeldTicketsModal) {
+        A2HeldTicketsModal(
+            heldTickets = heldTickets,
+            hasActiveCart = posState.cartItems.isNotEmpty(),
+            onHoldCurrent = {
+                viewModel.holdCurrentTicket()
+                showHeldTicketsModal = false
+            },
+            onRecall = { id ->
+                viewModel.recallTicket(id)
+                showHeldTicketsModal = false
+            },
+            onDelete = { id ->
+                viewModel.deleteHeldTicket(id)
+            },
+            onDismiss = { showHeldTicketsModal = false }
         )
     }
 
@@ -800,6 +823,35 @@ private fun A2PaymentModal(
                 }
 
                 val isUsd = selectedMethod == "EFECTIVO_USD" || selectedMethod == "ZELLE" || selectedMethod == "CREDITO"
+
+                // Quick preset buttons for tender
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val exactAmount = if (isUsd) String.format(Locale.US, "%.2f", totalDueUsd) else String.format(Locale.US, "%.2f", totalDueUsd * bcvRate)
+                    Surface(
+                        color = Color(0xFF1E3A8A),
+                        shape = RoundedCornerShape(2.dp),
+                        modifier = Modifier.clickable { amountInput = exactAmount }
+                    ) {
+                        Text("Exacto ($exactAmount)", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                    }
+                    if (isUsd) {
+                        listOf(1.0, 5.0, 10.0, 20.0, 50.0, 100.0).forEach { bill ->
+                            Surface(
+                                color = Color(0xFF0F766E),
+                                shape = RoundedCornerShape(2.dp),
+                                modifier = Modifier.clickable {
+                                    amountInput = bill.toInt().toString()
+                                    if (selectedMethod == "EFECTIVO_USD") receivedAmountUsd = bill.toInt().toString()
+                                }
+                            ) {
+                                Text("\$$bill", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
+                        }
+                    }
+                }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(
@@ -997,6 +1049,117 @@ private fun A2ClientPickerModal(
                 }
                 Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(2.dp)) {
                     Text("Cancelar", fontSize = 10.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun A2HeldTicketsModal(
+    heldTickets: List<com.example.viewmodel.HoldTicket>,
+    hasActiveCart: Boolean,
+    onHoldCurrent: () -> Unit,
+    onRecall: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = A2WindowBg,
+            border = androidx.compose.foundation.BorderStroke(1.dp, A2BorderDark),
+            modifier = Modifier.widthIn(max = 500.dp).padding(8.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "TIQUETES EN ESPERA (HOLD / RECALL)",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 12.sp,
+                        color = A2TitleNavyDark
+                    )
+                    Text(
+                        text = "${heldTickets.size} en cola",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2563EB)
+                    )
+                }
+
+                if (hasActiveCart) {
+                    Button(
+                        onClick = onHoldCurrent,
+                        shape = RoundedCornerShape(2.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Pause, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Poner Carrito Actual en Espera", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                HorizontalDivider(color = A2BorderMid)
+
+                if (heldTickets.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                        Text("No hay tiquetes en espera guardados.", fontSize = 10.sp, color = Color(0xFF64748B))
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 260.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(heldTickets) { t ->
+                            Surface(
+                                color = A2SurfaceWhite,
+                                shape = RoundedCornerShape(2.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, A2BorderMid),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(t.title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = A2TitleNavyDark)
+                                        Text("Cliente: ${t.clientName} • ${t.itemCount} ítems", fontSize = 9.sp, color = Color(0xFF475569))
+                                        Text("Total: \$${String.format(java.util.Locale.US, "%.2f", t.totalUsd)}", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color(0xFF15803D))
+                                    }
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Button(
+                                            onClick = { onRecall(t.id) },
+                                            shape = RoundedCornerShape(2.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF166534)),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("Recuperar", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        IconButton(
+                                            onClick = { onDelete(t.id) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = A2RedAlert, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(2.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = A2ControlFace),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Cerrar", fontSize = 10.sp, color = Color.Black)
                 }
             }
         }

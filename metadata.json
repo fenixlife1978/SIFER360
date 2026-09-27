@@ -1,6 +1,6 @@
 {
-  "name": "a2 ERP Administrativo",
-  "description": "ERP administrativo profesional adaptado a Venezuela con bimoneda USD/Bs, tasa BCV, inventario, ventas, compras, CxC, CxP, caja y bancos.",
+  "name": "a2 Punto de Venta (POS)",
+  "description": "Sistema de Punto de Venta (POS) profesional e intuitivo para mostrador adaptado a Venezuela con bimoneda USD/VES, tasa BCV, tiquete fiscal, arqueo de caja y cobro multiforma.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

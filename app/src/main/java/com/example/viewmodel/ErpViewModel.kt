@@ -47,6 +47,16 @@ data class PosState(
     val isExemptInvoice: Boolean = false
 )
 
+data class HoldTicket(
+    val id: String,
+    val title: String,
+    val timestamp: Long,
+    val clientName: String,
+    val itemCount: Int,
+    val totalUsd: Double,
+    val posState: PosState
+)
+
 data class PurchaseState(
     val selectedProvider: ProviderEntity? = null,
     val invoiceNumber: String = "",
@@ -94,16 +104,20 @@ class ErpViewModel(application: Application) : AndroidViewModel(application) {
         showMessage("Sesión cerrada correctamente.")
     }
 
-    // Active MDI Tabs
-    private val _openTabs = MutableStateFlow<List<ErpTab>>(listOf(ErpTab("dash", ErpModule.DASHBOARD, "Tablero")))
+    // Active MDI Tabs - Default to POS
+    private val _openTabs = MutableStateFlow<List<ErpTab>>(listOf(ErpTab("pos", ErpModule.VENTAS_POS, "Punto de Venta")))
     val openTabs = _openTabs.asStateFlow()
 
-    private val _activeTabId = MutableStateFlow("dash")
+    private val _activeTabId = MutableStateFlow("pos")
     val activeTabId = _activeTabId.asStateFlow()
 
     val currentModule = combine(_openTabs, _activeTabId) { tabs, activeId ->
-        tabs.find { it.id == activeId }?.module ?: ErpModule.DASHBOARD
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ErpModule.DASHBOARD)
+        tabs.find { it.id == activeId }?.module ?: ErpModule.VENTAS_POS
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ErpModule.VENTAS_POS)
+
+    // Held Tickets (Tickets en Espera)
+    private val _heldTickets = MutableStateFlow<List<HoldTicket>>(emptyList())
+    val heldTickets = _heldTickets.asStateFlow()
 
     // Live Database Flows
     val company = repository.company.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -304,6 +318,44 @@ class ErpViewModel(application: Application) : AndroidViewModel(application) {
                 showMessage("Error procesando venta: ${e.localizedMessage}")
             }
         }
+    }
+
+    fun holdCurrentTicket(customTitle: String = "") {
+        val current = _posState.value
+        if (current.cartItems.isEmpty()) {
+            showMessage("No hay artículos en el carrito para poner en espera.")
+            return
+        }
+        val count = current.cartItems.sumOf { it.quantity }.toInt()
+        val total = current.cartItems.sumOf { it.quantity * it.unitPriceUsd }
+        val clientName = current.selectedClient?.name ?: "Consumidor Final"
+        val title = if (customTitle.isNotBlank()) customTitle else "Ticket #${_heldTickets.value.size + 1} - $clientName ($count arts - \$${String.format(Locale.US, "%.2f", total)})"
+        val ticket = HoldTicket(
+            id = "hold_${System.currentTimeMillis()}",
+            title = title,
+            timestamp = System.currentTimeMillis(),
+            clientName = clientName,
+            itemCount = count,
+            totalUsd = total,
+            posState = current
+        )
+        _heldTickets.value = _heldTickets.value + ticket
+        _posState.value = PosState()
+        showMessage("Venta puesta en espera.")
+    }
+
+    fun recallTicket(holdId: String) {
+        val ticket = _heldTickets.value.find { it.id == holdId }
+        if (ticket != null) {
+            _posState.value = ticket.posState
+            _heldTickets.value = _heldTickets.value.filter { it.id != holdId }
+            showMessage("Ticket recuperado al mostrador.")
+        }
+    }
+
+    fun deleteHeldTicket(holdId: String) {
+        _heldTickets.value = _heldTickets.value.filter { it.id != holdId }
+        showMessage("Ticket en espera descartado.")
     }
 
     // Purchase Methods
